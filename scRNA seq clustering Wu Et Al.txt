@@ -1,0 +1,284 @@
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+set.seed(42)
+wu_dir     <- path.expand("~/Documents/Cancers/metadata/GSE161529_Wu_et_al_TNBC")
+input_rds  <- file.path(wu_dir, "processed", "Wu_et_al_TNBC_only.rds")
+output_dir <- file.path(wu_dir, "processed")
+figure_dir <- file.path(wu_dir, "figures")
+
+dir.create(figure_dir, recursive = TRUE, showWarnings = FALSE)
+
+cat("\n", strrep("=", 100), "\n")
+cat("STEP 1: LOAD DATA\n")
+cat(strrep("=", 100), "\n\n")
+
+scRNA <- readRDS(input_rds)
+cat("Loaded object:\n")
+print(scRNA)
+cat("\n")
+
+cat(strrep("-", 100), "\n")
+cat("STEP 2: QUALITY FILTERING\n")
+cat(strrep("-", 100), "\n\n")
+
+cat("Before filtering:", ncol(scRNA), "cells\n")
+
+scRNA <- subset(
+  scRNA,
+  subset = nGenes > 200 & nGenes < 7000 & percent.mt < 20
+)
+
+cat("After filtering:", ncol(scRNA), "cells\n\n")
+
+cat(strrep("-", 100), "\n")
+cat("STEP 3: NORMALIZATION, HVG SELECTION, SCALING\n")
+cat(strrep("-", 100), "\n\n")
+
+cat("Log-normalizing (LogNormalize, scale.factor = 10000)...\n")
+scRNA <- NormalizeData(scRNA, normalization.method = "LogNormalize", scale.factor = 10000)
+
+cat("Finding top 2000 variable features...\n")
+scRNA <- FindVariableFeatures(scRNA, selection.method = "vst", nfeatures = 2000)
+
+cat("Scaling data (variable features only, to save memory)...\n")
+scRNA <- ScaleData(scRNA, features = VariableFeatures(scRNA))
+
+cat("Done.\n\n")
+
+
+cat(strrep("-", 100), "\n")
+cat("STEP 4: PCA / CLUSTERING / UMAP\n")
+cat(strrep("-", 100), "\n\n")
+
+cat("Running PCA...\n")
+scRNA <- RunPCA(scRNA, features = VariableFeatures(scRNA), npcs = 30, verbose = FALSE)
+
+cat("Finding neighbors...\n")
+scRNA <- FindNeighbors(scRNA, dims = 1:30, verbose = FALSE)
+
+cat("Clustering (Louvain, resolution = 0.5)...\n")
+scRNA <- FindClusters(scRNA, resolution = 0.5, verbose = FALSE)
+
+cat("Running UMAP...\n")
+scRNA <- RunUMAP(scRNA, dims = 1:30, verbose = FALSE)
+
+cat("Number of clusters found:", length(unique(Idents(scRNA))), "\n\n")
+
+cat(strrep("-", 100), "\n")
+cat("STEP 5: CELL-TYPE ANNOTATION\n")
+cat(strrep("-", 100), "\n\n")
+
+# Map gene symbols -> ENSG IDs present in this object (rownames are ENSG)
+gene_map     <- scRNA@misc$gene_mapping
+symbol_to_id <- setNames(names(gene_map), gene_map)
+
+get_id <- function(symbol) {
+  id <- symbol_to_id[symbol]
+  id <- id[!is.na(id) & id %in% rownames(scRNA)]
+  if (length(id) == 0) return(NA)
+  return(id[1])
+}
+
+marker_symbols <- list(
+  Epithelial = c("EPCAM", "KRT8", "KRT18", "KRT19", "CDH1"),
+  T_cell     = c("CD3D", "CD3E", "CD8A", "CD4"),
+  B_cell     = c("CD19", "MS4A1", "CD79A"),
+  Myeloid    = c("CD68", "LYZ", "CD14", "ITGAM"),
+  Endothelial= c("PECAM1", "VWF", "CDH5"),
+  Fibroblast = c("PDGFRB", "PDGFRA", "COL1A1", "COL1A2"),
+  Plasma     = c("MZB1", "JCHAIN")
+)
+
+marker_ids <- lapply(marker_symbols, function(x) {
+  ids <- sapply(x, get_id)
+  ids[!is.na(ids)]
+})
+
+cat("Marker genes found in dataset (ENSG IDs mapped):\n")
+for (ct in names(marker_ids)) {
+  cat("  ", ct, ": ", length(marker_ids[[ct]]), "/", length(marker_symbols[[ct]]), " markers found\n", sep = "")
+}
+cat("\n")
+
+# Module score per cell type
+cat("Computing module scores per cell type...\n")
+for (ct in names(marker_ids)) {
+  if (length(marker_ids[[ct]]) >= 1) {
+    scRNA <- AddModuleScore(scRNA, features = list(marker_ids[[ct]]), name = paste0("score_", ct))
+  }
+}
+
+# Rename the auto-suffixed "1" column
+score_cols <- grep("^score_", colnames(scRNA@meta.data), value = TRUE)
+for (col in score_cols) {
+  new_name <- sub("1$", "", col)
+  colnames(scRNA@meta.data)[colnames(scRNA@meta.data) == col] <- new_name
+}
+score_cols <- sub("1$", "", score_cols)
+
+cat("Module scores computed:", paste(score_cols, collapse = ", "), "\n\n")
+
+# Assign per-cluster identity based on mean module score per cluster
+cat("Assigning cluster-level cell type identities...\n")
+
+cluster_scores <- scRNA@meta.data %>%
+  select(seurat_clusters, all_of(score_cols)) %>%
+  group_by(seurat_clusters) %>%
+  summarise(across(everything(), mean), .groups = "drop")
+
+cluster_scores_mat <- as.data.frame(cluster_scores[, -1])
+rownames(cluster_scores_mat) <- cluster_scores$seurat_clusters
+
+cluster_celltype <- apply(cluster_scores_mat, 1, function(row) {
+  best <- names(row)[which.max(row)]
+  sub("^score_", "", best)
+})
+cat("\nCluster -> Cell type assignment:\n")
+print(data.frame(cluster = names(cluster_celltype), cell_type = cluster_celltype))
+# Map back to each cell
+scRNA$cell_type <- unname(cluster_celltype[as.character(scRNA$seurat_clusters)])
+cat("\nCell type distribution:\n")
+print(table(scRNA$cell_type))
+cat("\n")
+cat(strrep("-", 100), "\n")
+cat("STEP 6: SAVING ANNOTATED OBJECT\n")
+cat(strrep("-", 100), "\n\n")
+
+annotated_rds <- file.path(output_dir, "Wu_et_al_TNBC_annotated.rds")
+saveRDS(scRNA, annotated_rds)
+cat("Saved:", annotated_rds, "\n\n")
+
+# ==============================================================================
+# STEP 7: FIGURE 1 - MULTI-PANEL CELL-TYPE OVERVIEW
+# ==============================================================================
+
+cat(strrep("-", 100), "\n")
+cat("STEP 7: BUILDING FIGURE 1 (OVERVIEW)\n")
+cat(strrep("-", 100), "\n\n")
+
+# Consistent color palette for cell types
+celltype_colors <- c(
+  "Epithelial"  = "#d7191c",
+  "T_cell"      = "#2c7bb6",
+  "B_cell"      = "#abd9e9",
+  "Myeloid"     = "#fdae61",
+  "Endothelial" = "#1a9641",
+  "Fibroblast"  = "#756bb1",
+  "Plasma"      = "#636363"
+)
+
+# Panel A: UMAP by cluster
+p1 <- DimPlot(scRNA, reduction = "umap", group.by = "seurat_clusters", label = TRUE, label.size = 3) +
+  ggtitle("A. Clusters (Louvain)") +
+  theme(legend.position = "none")
+
+# Panel B: UMAP by cell type
+p2 <- DimPlot(scRNA, reduction = "umap", group.by = "cell_type", cols = celltype_colors) +
+  ggtitle("B. Annotated Cell Types") +
+  theme(legend.title = element_blank())
+
+# Panel C: UMAP by sample
+p3 <- DimPlot(scRNA, reduction = "umap", group.by = "sample") +
+  ggtitle("C. Sample Origin") +
+  theme(legend.text = element_text(size = 6), legend.title = element_blank())
+
+# Panel D: Feature plots for key markers (using ENSG IDs, labeled with symbols)
+key_markers_symbols <- c("EPCAM", "PTPRC", "PECAM1", "PDGFRB")
+key_markers_ids <- sapply(key_markers_symbols, get_id)
+key_markers_ids <- key_markers_ids[!is.na(key_markers_ids)]
+
+p4 <- FeaturePlot(scRNA, features = key_markers_ids, ncol = 2, order = TRUE) &
+  theme(legend.position = "right", plot.title = element_text(size = 9))
+
+# Manually relabel feature plot titles with gene symbols instead of ENSG IDs
+for (i in seq_along(p4)) {
+  ensg <- key_markers_ids[i]
+  symbol <- gene_map[ensg]
+  p4[[i]] <- p4[[i]] + ggtitle(symbol)
+}
+p4 <- wrap_plots(p4) + plot_annotation(title = "D. Canonical Marker Expression")
+
+# Panel E: Stacked bar - cell counts per type per sample
+cell_counts <- scRNA@meta.data %>%
+  count(sample, cell_type) %>%
+  group_by(sample) %>%
+  mutate(fraction = n / sum(n))
+
+p5 <- ggplot(cell_counts, aes(x = sample, y = n, fill = cell_type)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = celltype_colors) +
+  labs(title = "E. Cell Counts per Sample", x = NULL, y = "Cell count", fill = "Cell type") +
+  theme_minimal(base_size = 9) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid = element_blank())
+
+# Panel F: Funnel plot (total -> QC-passed -> epithelial)
+n_total       <- length(colnames(readRDS(input_rds)))
+n_qc_passed   <- ncol(scRNA)
+n_epithelial  <- sum(scRNA$cell_type == "Epithelial")
+
+funnel_df <- data.frame(
+  stage = factor(c("All cells\n(raw)", "QC-passed\ncells", "Epithelial\ncells"),
+                 levels = c("All cells\n(raw)", "QC-passed\ncells", "Epithelial\ncells")),
+  count = c(n_total, n_qc_passed, n_epithelial)
+)
+
+p6 <- ggplot(funnel_df, aes(x = stage, y = count, fill = stage)) +
+  geom_bar(stat = "identity", width = 0.6) +
+  geom_text(aes(label = scales::comma(count)), vjust = -0.5, size = 3.5) +
+  scale_fill_manual(values = c("#bdbdbd", "#74a9cf", "#d7191c")) +
+  labs(title = "F. Filtering Funnel", x = NULL, y = "Number of cells") +
+  theme_minimal(base_size = 9) +
+  theme(legend.position = "none", panel.grid = element_blank())
+
+# Combine into one figure
+combined <- (p1 | p2 | p3) / (p4) / (p5 | p6) +
+  plot_layout(heights = c(1, 1.2, 1))
+
+cat("Saving Figure 1 (PNG, 600 dpi)...\n")
+ggsave(file.path(figure_dir, "Figure1_CellType_Overview.png"),
+       combined, width = 16, height = 18, dpi = 600, bg = "white")
+
+cat("Saving Figure 1 (PDF)...\n")
+ggsave(file.path(figure_dir, "Figure1_CellType_Overview.pdf"),
+       combined, width = 16, height = 18, bg = "white")
+
+cat("Figure 1 saved.\n\n")
+cat(strrep("-", 100), "\n")
+cat("STEP 8: SAVING SUMMARY TABLES\n")
+cat(strrep("-", 100), "\n\n")
+
+write.csv(cell_counts, file.path(output_dir, "celltype_counts_per_sample.csv"), row.names = FALSE)
+write.csv(funnel_df, file.path(output_dir, "filtering_funnel_counts.csv"), row.names = FALSE)
+
+cat("Saved: celltype_counts_per_sample.csv\n")
+cat("Saved: filtering_funnel_counts.csv\n\n")
+
+cat(strrep("-", 100), "\n")
+cat("STEP 9: SUBSETTING EPITHELIAL CELLS\n")
+cat(strrep("-", 100), "\n\n")
+
+scRNA_epi <- subset(scRNA, subset = cell_type == "Epithelial")
+
+cat("Epithelial subset:", ncol(scRNA_epi), "cells,", nrow(scRNA_epi), "genes\n\n")
+
+epi_rds <- file.path(output_dir, "Wu_et_al_TNBC_epithelial.rds")
+saveRDS(scRNA_epi, epi_rds)
+cat("Saved:", epi_rds, "\n\n")
+cat(strrep("=", 100), "\n")
+cat("✅ PIPELINE COMPLETE\n")
+cat(strrep("=", 100), "\n\n")
+
+cat("Outputs:\n")
+cat("  1. Annotated object (all cells): ", annotated_rds, "\n")
+cat("  2. Epithelial-only object:       ", epi_rds, "\n")
+cat("  3. Figure 1 (PNG, 600dpi):       ", file.path(figure_dir, "Figure1_CellType_Overview.png"), "\n")
+cat("  4. Figure 1 (PDF):               ", file.path(figure_dir, "Figure1_CellType_Overview.pdf"), "\n")
+cat("  5. Cell type counts (CSV):       ", file.path(output_dir, "celltype_counts_per_sample.csv"), "\n")
+cat("  6. Filtering funnel (CSV):       ", file.path(output_dir, "filtering_funnel_counts.csv"), "\n\n")
+
+cat("Cell type summary:\n")
+print(table(scRNA$cell_type))
+
+cat("\nReady for CUEDC2-ER validation analysis on epithelial subset!\n\n")
