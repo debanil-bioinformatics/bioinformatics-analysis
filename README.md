@@ -1,31 +1,20 @@
-# Bioinformatics Analysis Workflows
+# Bioinformatics Analysis Toolkit
 
-This repository contains bioinformatics analysis scripts developed for the analysis of
-large-scale transcriptomic datasets, ChIP-seq experiments, and drug sensitivity assays,
-with a focus on cancer biology and hormone receptor signaling.
+A lightweight collection of reusable R functions and dataset workflows for transcriptomics, single-cell, and drug-sensitivity analyses.
 
-The code is intended to demonstrate analytical strategies, data handling approaches,
-and visualization methods commonly used in computational cancer research.
+Structure
 
-## Analysis domains
-- Bulk RNA-seq analysis and differential gene expression
-- Public cohort analysis (TCGA, GEO)
-- Survival analysis and biomarker evaluation
-- ChIP-seq peak annotation and transcription start site (TSS) proximity analysis
-- Large-scale drug sensitivity and IC₅₀ analysis (e.g., GDSC, DepMap)
+- R/: reusable functions (survival, correlation, association, expression, signatures, single_cell, visualization)
+- scripts/: dataset-specific workflows (tcga, metabric, ccle, scrna)
+- examples/: concise example scripts
+- tests/: lightweight testthat tests
 
-## Tools and languages
-- R (DESeq2, edgeR, limma, survival, GenomicRanges, ggplot2, dplyr)
-- Public datasets: TCGA, GEO, GDSC, DepMap
+See docs/refactor_inventory.md for a detailed inventory of repository contents collected before refactor.
 
-## Repository structure
-Each analysis domain is organized into dedicated subdirectories with documented scripts
-and minimal assumptions about data structure to support reuse and reproducibility.
+Dependencies
 
-## Notes
-- Scripts are modular and commented for clarity
-- No raw or patient-identifiable data are included
-- File paths are user-defined
+Key R packages used by functions: survival, survminer, ggplot2, dplyr, DESeq2 (for DE workflows), Seurat (for single-cell), GSVA/UCell (for signature scoring).
 
-This repository serves as a living collection of reproducible bioinformatics workflows
-rather than a single end-to-end pipeline.
+Usage
+
+Source the function files in R/ or use devtools::load_all('.') in an interactive session. Run dataset workflows under scripts/ with appropriate input files.
