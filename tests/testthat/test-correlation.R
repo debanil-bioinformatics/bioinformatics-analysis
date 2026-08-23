@@ -1,4 +1,5 @@
-# tests/testthat/test-correlation.R
+# Load the correlation module before running tests
+source(file.path('R', 'correlation.R'))
 
 library(testthat)
 
