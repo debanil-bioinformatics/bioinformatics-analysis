@@ -1,43 +1,36 @@
-# Bioinformatics Analysis Toolkit
+# Bioinformatics Analysis
 
-A lightweight collection of reusable R functions and dataset workflows for transcriptomics, single-cell, and drug-sensitivity analyses. This repository is maintained as a research code portfolio by a computational biologist and contains code used in published and in-progress analyses.
+This is my personal research repository for computational cancer biology.
 
-What this repository contains
+I am a molecular biologist interested in understanding cancer using both experimental work and the enormous amount of data that is already publicly available. Thousands of experiments have been performed by researchers around the world, and many of these datasets are freely available online.
 
-- R/: reusable analysis functions (survival, correlation, association, expression, signatures, single-cell helpers, visualization)
-- scripts/: dataset-specific workflows and wrappers (tcga, metabric, ccle, scrna)
-- examples/: short demonstrations showing how to apply the reusable functions to dataset inputs
-- tests/: lightweight testthat unit tests for core reusable functions
-- docs/: inventory and notes
+I use this repository to explore those datasets, ask biological questions, test hypotheses, and look for meaningful connections between different types of cancer data.
 
-Design and intent
+The analyses here include work with datasets such as:
 
-- R/ holds small, well-documented functions that perform common analytical tasks (e.g., Kaplan–Meier fitting, Cox regression, correlation, signature scoring). Functions accept data frames, matrices or file paths described in the examples; they do not embed dataset-specific assumptions.
-- scripts/ holds dataset workflows (TCGA, METABRIC, CCLE/DepMap, Wu et al. scRNA) that call R/ functions and perform the dataset-specific preprocessing needed for those cohorts.
-- examples/ contains concise, runnable examples you can adapt to your own data. Examples intentionally use relative paths and accept file paths as arguments.
+- TCGA
+- METABRIC
+- CCLE / DepMap
+- Public bulk RNA-seq datasets
+- Public single-cell RNA-seq datasets
+- Other cancer-related datasets and resources
 
-Quick start
+The repository contains reusable R functions, analysis workflows, and examples that I develop along the way. Some analyses are exploratory, some are used to support experimental research, and some are simply questions I find interesting.
 
-1. Clone the repository and switch to the toolkit/refactor branch:
+This is **not intended to be a polished software package**. It is my working research codebase and a record of how I approach computational questions as a biologist.
 
-   git clone https://github.com/debanil-bioinformatics/bioinformatics-analysis.git
-   cd bioinformatics-analysis
-   git checkout toolkit/refactor
+Feel free to use, adapt, or learn from anything here. If you find something useful, great.
 
-2. Run lightweight tests (recommended):
+## Repository structure
 
-   # from shell, after installing minimal R dependencies
-   Rscript -e "install.packages(c('testthat','survival','survminer','ggplot2'), repos='https://cloud.r-project.org')"
-   Rscript -e "testthat::test_dir('tests/testthat')"
+- `R/` — reusable analysis functions
+- `scripts/` — dataset-specific analysis workflows
+- `examples/` — small examples showing how functions can be used
+- `tests/` — lightweight tests for selected reusable functions
+- `docs/` — notes and documentation
 
-3. Try an example (adapt the input file paths):
+## A simple idea behind this repository
 
-   Rscript -e "source('examples/tcga_survival.R'); example_tcga_survival('path/to/survival_data.csv')"
+> There is already an enormous amount of biological knowledge sitting in publicly available datasets.  
+> I want to use that knowledge to make meaningful connections, generate hypotheses, and test ideas that can ultimately be taken back to the laboratory.
 
-Notes
-
-- This repository is research code. It is intentionally lightweight and not a CRAN package. DESCRIPTION is present for convenient metadata only.
-- Heavy dependencies used by some scripts (Seurat, GSVA, UCell, DESeq2, biomaRt) are optional — install them only if you plan to run the corresponding scripts in scripts/scrna/ or scripts/tcga/.
-- Original raw analysis scripts and prior versions are available in the repository history. Current, canonical workflow scripts are in scripts/ and reusable functions are in R/.
-
-If you find any issues running the examples or tests, please report them so they can be addressed; the repository is intended to be useful and reproducible for other computational biology researchers.

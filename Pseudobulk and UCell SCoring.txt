@@ -1,4 +1,0 @@
-# Overwrite original incoming files with redirect notes to avoid duplicating code and to remove personal paths.
-# Each original is replaced with a small note pointing to the new scripts/ location.
-
-cat('# File moved/cleaned: please use scripts/ versions\n# Original content has been archived in the repo history.\n')

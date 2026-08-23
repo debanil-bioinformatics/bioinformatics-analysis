@@ -1,1 +1,0 @@
-cat('# File moved/cleaned: please use scripts/scrna/pseudobulk_original.R or scripts/scrna/pseudobulk_ucell_cuedc2.R\n')

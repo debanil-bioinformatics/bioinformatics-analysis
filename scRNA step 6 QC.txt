@@ -1,1 +1,0 @@
-cat('# File moved/cleaned: please use scripts/scrna/scRNA_step6_qc.R\n')
